@@ -196,7 +196,7 @@
           list.appendChild(li);
         });
       }
-      
+
       document
         .getElementById("refresh-btn")
         .addEventListener("click", loadTransactions);
@@ -237,6 +237,25 @@
       cancelBtn.addEventListener("click", () => {
         modal.classList.add("hidden");
         document.getElementById("new-account-name").value = "";
+      });
+
+      saveBtn.addEventListener("click", async () => {
+        const name = document.getElementById("new-account-name").value;
+        const accountStatus = document.getElementById("account-status");
+
+        const { error } = await supabaseClient.from("accounts").insert({
+          name: name,
+        });
+
+        if (error) {
+          accountStatus.textContent = error.message;
+          return;
+        }
+
+        accountStatus.textContent = "Account added!";
+        document.getElementById("new-account-name").value = "";
+        modal.classList.add("hidden");
+        loadAccounts();
       });
 
       checkSession();
