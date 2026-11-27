@@ -20,7 +20,7 @@
     <button id="logout-btn">Log Out</button>
 
     <hr />
-
+    <!--ADD-ACCOUNTS-->
     <!-- Your existing accounts list area -->
     <div id="accounts-section">
       <button id="open-add-account-btn">+ Add Account</button>
@@ -32,6 +32,25 @@
       <div class="modal-content">
         <h2>New Account</h2>
         <input type="text" id="new-account-name" placeholder="Account name" />
+        <br /><br />
+        <select id="new-account-type">
+          <option value="cash">Cash</option>
+          <option value="debit" selected>Debit</option>
+          <option value="savings">Savings</option>
+        </select>
+        <br /><br />
+        <input
+          type="text"
+          id="new-account-description"
+          placeholder="Description (optional)"
+        />
+        <br /><br />
+        <input
+          type="number"
+          id="new-account-balance"
+          step="0.01"
+          placeholder="Starting balance (+/-, optional)"
+        />
         <div class="modal-buttons">
           <button id="save-account-btn">Save</button>
           <button id="cancel-account-btn">Cancel</button>
@@ -41,7 +60,7 @@
     </div>
 
     <hr />
-
+    <!--ADD-TRANSACTIONS-->
     <h2>Add Transaction</h2>
     <input
       id="tx-amount"
@@ -50,6 +69,8 @@
       placeholder="Amount (use - for expenses)"
     />
     <br /><br />
+    <input id="tx-title" type="text" placeholder="Title" /><br /><br />
+    <input id="tx-date" type="date" /><br /><br />
     <input
       id="tx-description"
       type="text"
@@ -61,7 +82,7 @@
     <p id="tx-status"></p>
 
     <hr />
-
+    <!--TRANSACTIONS-LIST-->
     <h2>Your Transactions</h2>
     <button id="refresh-btn">Refresh</button>
     <p id="balance"></p>
@@ -78,6 +99,17 @@
         SUPABASE_URL,
         SUPABASE_ANON_KEY,
       );
+
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.register("sw.js");
+      }
+      //Gets rid of Fetch - "VFetch event handler is recognized as no-op. No-op fetch handler may bring overhead during navigation. Consider removing the handler if possible.""
+      self.addEventListener("install", () => {
+        self.skipWaiting();
+      });
+      self.addEventListener("activate", () => {
+        self.clients.claim();
+      });
 
       //Log-In - V0
       const emailInput = document.getElementById("email");
@@ -127,13 +159,17 @@
         .getElementById("add-tx-btn")
         .addEventListener("click", async () => {
           const amount = parseFloat(document.getElementById("tx-amount").value);
+          const title = document.getElementById("tx-title").value;
           const description = document.getElementById("tx-description").value;
+          const date = document.getElementById("tx-date").value;
           const accountId = document.getElementById("tx-account").value;
           const txStatus = document.getElementById("tx-status");
 
           const { error } = await supabaseClient.from("transactions").insert({
             amount: amount,
+            title: title,
             description: description,
+            occurred_on: date,
             account_id: accountId,
           });
 
@@ -162,7 +198,8 @@
           );
 
           const div = document.createElement("div");
-          div.textContent = account.name + ": " + balance.toFixed(2);
+          div.textContent =
+            account.name + " - " + account.type + ": $" + balance.toFixed(2);
           accountsList.appendChild(div);
 
           const option = document.createElement("option");
@@ -175,7 +212,7 @@
       async function loadTransactions() {
         const { data, error } = await supabaseClient
           .from("transactions")
-          .select("*")
+          .select("*, accounts(name)")
           .order("occurred_on", { ascending: false });
 
         if (error) {
@@ -191,8 +228,15 @@
         list.innerHTML = "";
         data.forEach((t) => {
           const li = document.createElement("li");
+          const accountName = t.accounts ? t.accounts.name : "General";
           li.textContent =
-            t.occurred_on + " — " + t.description + ": " + t.amount;
+            t.occurred_on +
+            " - " +
+            accountName +
+            " - " +
+            t.title +
+            ": $" +
+            t.amount;
           list.appendChild(li);
         });
       }
@@ -212,51 +256,84 @@
         }
       }
 
-      if ("serviceWorker" in navigator) {
-        navigator.serviceWorker.register("sw.js");
-      }
-
-      //Gets rid of Fetch - "VFetch event handler is recognized as no-op. No-op fetch handler may bring overhead during navigation. Consider removing the handler if possible.""
-      self.addEventListener("install", () => {
-        self.skipWaiting();
-      });
-      self.addEventListener("activate", () => {
-        self.clients.claim();
-      });
-
       //Accounts Functions - V2
       const modal = document.getElementById("add-account-modal");
-      const openBtn = document.getElementById("open-add-account-btn");
-      const cancelBtn = document.getElementById("cancel-account-btn");
-      const saveBtn = document.getElementById("save-account-btn");
 
-      openBtn.addEventListener("click", () => {
+      function openAccountModal() {
         modal.classList.remove("hidden");
-      });
+      }
 
-      cancelBtn.addEventListener("click", () => {
+      function closeAccountModal() {
         modal.classList.add("hidden");
         document.getElementById("new-account-name").value = "";
-      });
-
-      saveBtn.addEventListener("click", async () => {
+      }
+      //FURTURE-ERROR-POSSIBLE
+      async function saveAccount() {
         const name = document.getElementById("new-account-name").value;
+        const type = document.getElementById("new-account-type").value;
+        const description = document.getElementById(
+          "new-account-description",
+        ).value;
+        const balance =
+          parseFloat(document.getElementById("new-account-balance").value) || 0;
         const accountStatus = document.getElementById("account-status");
 
-        const { error } = await supabaseClient.from("accounts").insert({
-          name: name,
-        });
+        const { data, error } = await supabaseClient
+          .from("accounts")
+          .insert({
+            name: name,
+            type: type,
+            description: description,
+          })
+          .select();
 
         if (error) {
           accountStatus.textContent = error.message;
           return;
         }
 
+        const newAccountId = data[0].id;
+
+        if (balance !== 0) {
+          const today = new Date().toISOString().split("T")[0];
+
+          const { error: txError } = await supabaseClient
+            .from("transactions")
+            .insert({
+              amount: balance,
+              title: "Starting Balance",
+              occurred_on: today,
+              account_id: newAccountId,
+            });
+
+          if (txError) {
+            accountStatus.textContent = txError.message;
+            return;
+          }
+        }
+
         accountStatus.textContent = "Account added!";
         document.getElementById("new-account-name").value = "";
+        document.getElementById("new-account-description").value = "";
+        document.getElementById("new-account-balance").value = "";
         modal.classList.add("hidden");
         loadAccounts();
-      });
+      }
+
+      document
+        .getElementById("open-add-account-btn")
+        .addEventListener("click", openAccountModal);
+
+      document
+        .getElementById("cancel-account-btn")
+        .addEventListener("click", closeAccountModal);
+
+      document
+        .getElementById("save-account-btn")
+        .addEventListener("click", saveAccount);
+
+      //ONLY ON REFRESH
+      document.getElementById("tx-date").valueAsDate = new Date();
 
       checkSession();
     </script>
