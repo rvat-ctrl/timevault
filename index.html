@@ -20,13 +20,12 @@
     <button id="logout-btn">Log Out</button>
 
     <hr />
-    <!--ADD-ACCOUNTS-->
+    <!--ACCOUNTS-->
     <!-- Your existing accounts list area -->
     <div id="accounts-section">
       <button id="open-add-account-btn">+ Add Account</button>
       <div id="accounts-list"></div>
     </div>
-
     <!-- The modal, hidden by default -->
     <div id="add-account-modal" class="modal hidden">
       <div class="modal-content">
@@ -59,8 +58,97 @@
       </div>
     </div>
 
+    <br />
+    <!--FUNDINGS-->
+    <button id="open-funding-modal-btn">+ Add Funding</button>
+    <div id="funding-modal" class="modal hidden">
+      <div class="modal-content">
+        <h2>New Income / Funding</h2>
+
+        <select id="funding-income-account"></select>
+        <br /><br />
+        <input
+          id="funding-income-amount"
+          type="number"
+          step="0.01"
+          placeholder="Amount"
+        />
+        <br /><br />
+        <input id="funding-income-title" type="text" placeholder="Title" />
+        <br /><br />
+        <input
+          id="funding-income-description"
+          type="text"
+          placeholder="Description (optional)"
+        />
+        <br /><br />
+        <input id="funding-income-date" type="date" />
+
+        <hr />
+
+        <h3>Fund Accounts</h3>
+        <div id="funding-rows" class="funding-rows-scroll"></div>
+        <button id="add-funding-row-btn">+ Add Row</button>
+
+        <div class="modal-buttons">
+          <button id="save-funding-btn">Save</button>
+          <button id="cancel-funding-btn">Cancel</button>
+        </div>
+        <p id="funding-status"></p>
+      </div>
+    </div>
+
+    <button id="open-transfer-modal-btn">+ Transfer</button>
+    <div id="transfer-modal" class="modal hidden">
+      <div class="modal-content">
+        <h2>New Transfer</h2>
+
+        <select id="transfer-from-account"></select>
+        <br /><br />
+        <select id="transfer-to-account"></select>
+        <br /><br />
+        <input
+          id="transfer-amount"
+          type="number"
+          step="0.01"
+          placeholder="Amount"
+        />
+        <br /><br />
+        <input id="transfer-title" type="text" placeholder="Title" />
+        <br /><br />
+        <input
+          id="transfer-description"
+          type="text"
+          placeholder="Description (optional)"
+        />
+        <br /><br />
+        <input id="transfer-date" type="date" />
+
+        <div class="modal-buttons">
+          <button id="save-transfer-btn">Save</button>
+          <button id="cancel-transfer-btn">Cancel</button>
+        </div>
+        <p id="transfer-status"></p>
+      </div>
+    </div>
+
+    <button id="open-delete-account-modal-btn">Delete Account</button>
+    <div id="delete-account-modal" class="modal hidden">
+      <div class="modal-content">
+        <h2>Delete Account</h2>
+
+        <select id="delete-account-select"></select>
+
+        <div class="modal-buttons">
+          <button id="confirm-delete-account-btn">Delete</button>
+          <button id="cancel-delete-account-btn">Cancel</button>
+        </div>
+        <p id="delete-account-status"></p>
+      </div>
+    </div>
+
     <hr />
-    <!--ADD-TRANSACTIONS-->
+    <!--TRANSACTIONS-->
     <h2>Add Transaction</h2>
     <input
       id="tx-amount"
@@ -157,24 +245,7 @@
       //Transaction Functions - v1
       document
         .getElementById("add-tx-btn")
-        .addEventListener("click", async () => {
-          const amount = parseFloat(document.getElementById("tx-amount").value);
-          const title = document.getElementById("tx-title").value;
-          const description = document.getElementById("tx-description").value;
-          const date = document.getElementById("tx-date").value;
-          const accountId = document.getElementById("tx-account").value;
-          const txStatus = document.getElementById("tx-status");
-
-          const { error } = await supabaseClient.from("transactions").insert({
-            amount: amount,
-            title: title,
-            description: description,
-            occurred_on: date,
-            account_id: accountId,
-          });
-
-          txStatus.textContent = error ? error.message : "Transaction added!";
-        });
+        .addEventListener("click", saveTransaction);
 
       async function loadAccounts() {
         const { data, error } = await supabaseClient
@@ -229,6 +300,7 @@
         data.forEach((t) => {
           const li = document.createElement("li");
           const accountName = t.accounts ? t.accounts.name : "General";
+
           li.textContent =
             t.occurred_on +
             " - " +
@@ -237,6 +309,28 @@
             t.title +
             ": $" +
             t.amount;
+
+          if (!t.transfer_id && !t.funding_id) {
+            const editBtn = document.createElement("button");
+            editBtn.textContent = "Edit";
+            editBtn.addEventListener("click", () => editTransaction(t));
+            li.appendChild(editBtn);
+          } else if (t.transfer_id && !t.funding_id) {
+            const editBtn = document.createElement("button");
+            editBtn.textContent = "Edit";
+            editBtn.addEventListener("click", () => editTransfer(t));
+            li.appendChild(editBtn);
+          } else if (t.funding_id && !t.transfer_id) {
+            const editBtn = document.createElement("button");
+            editBtn.textContent = "Edit";
+            editBtn.addEventListener("click", () => editFunding(t));
+            li.appendChild(editBtn);
+          }
+          const deleteBtn = document.createElement("button");
+          deleteBtn.textContent = "Delete";
+          deleteBtn.addEventListener("click", () => deleteTransaction(t));
+          li.appendChild(deleteBtn);
+
           list.appendChild(li);
         });
       }
@@ -334,6 +428,645 @@
 
       //ONLY ON REFRESH
       document.getElementById("tx-date").valueAsDate = new Date();
+
+      //VERSION-3-FUNDINGS
+      function createFundingRow() {
+        const row = document.createElement("div");
+        row.className = "funding-row";
+
+        const accountSelect = document.createElement("select");
+        accountSelect.className = "row-account";
+        copyAccountOptions(accountSelect);
+
+        const amountInput = document.createElement("input");
+        amountInput.type = "number";
+        amountInput.step = "0.01";
+        amountInput.placeholder = "Amount";
+        amountInput.className = "row-amount";
+
+        const titleInput = document.createElement("input");
+        titleInput.type = "text";
+        titleInput.placeholder = "Title";
+        titleInput.className = "row-title";
+
+        const descriptionInput = document.createElement("input");
+        descriptionInput.type = "text";
+        descriptionInput.placeholder = "Description (optional)";
+        descriptionInput.className = "row-description";
+
+        row.appendChild(accountSelect);
+        row.appendChild(amountInput);
+        row.appendChild(titleInput);
+        row.appendChild(descriptionInput);
+
+        document.getElementById("funding-rows").appendChild(row);
+      }
+
+      function copyAccountOptions(selectElement) {
+        const sourceOptions = document.getElementById("tx-account").options;
+        for (const option of sourceOptions) {
+          selectElement.appendChild(option.cloneNode(true));
+        }
+      }
+
+      document
+        .getElementById("add-funding-row-btn")
+        .addEventListener("click", createFundingRow);
+
+      const fundingModal = document.getElementById("funding-modal");
+      // SOFTLOCK BY ADDING TO MANY ROWS
+      function openFundingModal() {
+        fundingModal.classList.remove("hidden");
+
+        document.getElementById("funding-rows").innerHTML = "";
+        createFundingRow();
+
+        const incomeAccountSelect = document.getElementById(
+          "funding-income-account",
+        );
+        incomeAccountSelect.innerHTML = "";
+        copyAccountOptions(incomeAccountSelect);
+      }
+
+      function closeFundingModal() {
+        fundingModal.classList.add("hidden");
+
+        document.getElementById("funding-income-account").value = "";
+        document.getElementById("funding-income-amount").value = "";
+        document.getElementById("funding-income-title").value = "";
+        document.getElementById("funding-income-description").value = "";
+        document.getElementById("funding-income-date").value = "";
+        document.getElementById("funding-rows").innerHTML = "";
+
+        editingFundingId = null;
+        document.getElementById("save-funding-btn").textContent = "Save";
+      }
+
+      document
+        .getElementById("open-funding-modal-btn")
+        .addEventListener("click", openFundingModal);
+
+      document
+        .getElementById("cancel-funding-btn")
+        .addEventListener("click", closeFundingModal);
+
+      function collectFundingRows() {
+        const rows = document.querySelectorAll(".funding-row");
+        const rowsData = [];
+
+        rows.forEach((row) => {
+          const accountId = row.querySelector(".row-account").value;
+          const amount = parseFloat(row.querySelector(".row-amount").value);
+          const title = row.querySelector(".row-title").value;
+          const description = row.querySelector(".row-description").value;
+
+          if (!isNaN(amount) && amount !== 0) {
+            rowsData.push({ accountId, amount, title, description });
+          }
+        });
+
+        return rowsData;
+      }
+
+      async function saveFunding() {
+        const incomeAccountId = document.getElementById(
+          "funding-income-account",
+        ).value;
+        const incomeAmount = parseFloat(
+          document.getElementById("funding-income-amount").value,
+        );
+        const incomeTitle = document.getElementById(
+          "funding-income-title",
+        ).value;
+        const incomeDescription = document.getElementById(
+          "funding-income-description",
+        ).value;
+        const incomeDate = document.getElementById("funding-income-date").value;
+        const fundingStatus = document.getElementById("funding-status");
+
+        if (isNaN(incomeAmount)) {
+          fundingStatus.textContent = "Enter an income amount.";
+          return;
+        }
+
+        const fundingId = crypto.randomUUID();
+        const rowsData = collectFundingRows();
+
+        const inserts = [
+          {
+            account_id: incomeAccountId,
+            amount: incomeAmount,
+            title: incomeTitle,
+            description: incomeDescription,
+            occurred_on: incomeDate,
+            funding_id: fundingId,
+            transfer_id: null,
+          },
+        ];
+
+        rowsData.forEach((rowData) => {
+          const transferId = crypto.randomUUID();
+
+          inserts.push({
+            account_id: incomeAccountId,
+            amount: -rowData.amount,
+            title: rowData.title,
+            description: rowData.description,
+            occurred_on: incomeDate,
+            funding_id: fundingId,
+            transfer_id: transferId,
+          });
+
+          inserts.push({
+            account_id: rowData.accountId,
+            amount: rowData.amount,
+            title: rowData.title,
+            description: rowData.description,
+            occurred_on: incomeDate,
+            funding_id: fundingId,
+            transfer_id: transferId,
+          });
+        });
+
+        const { error } = await supabaseClient
+          .from("transactions")
+          .insert(inserts);
+
+        if (error) {
+          fundingStatus.textContent = error.message;
+          return;
+        }
+
+        fundingStatus.textContent = "Funding saved!";
+        closeFundingModal();
+        loadTransactions();
+        loadAccounts();
+      }
+
+      document
+        .getElementById("save-funding-btn")
+        .addEventListener("click", saveFunding);
+
+      const transferModal = document.getElementById("transfer-modal");
+
+      function openTransferModal() {
+        transferModal.classList.remove("hidden");
+
+        const fromSelect = document.getElementById("transfer-from-account");
+        const toSelect = document.getElementById("transfer-to-account");
+
+        fromSelect.innerHTML = "";
+        toSelect.innerHTML = "";
+        copyAccountOptions(fromSelect);
+        copyAccountOptions(toSelect);
+      }
+
+      function closeTransferModal() {
+        transferModal.classList.add("hidden");
+
+        document.getElementById("transfer-amount").value = "";
+        document.getElementById("transfer-title").value = "";
+        document.getElementById("transfer-description").value = "";
+        document.getElementById("transfer-date").value = "";
+
+        editingTransferId = null;
+        document.getElementById("save-transfer-btn").textContent = "Save";
+      }
+
+      document
+        .getElementById("open-transfer-modal-btn")
+        .addEventListener("click", openTransferModal);
+
+      document
+        .getElementById("cancel-transfer-btn")
+        .addEventListener("click", closeTransferModal);
+
+      async function saveTransfer() {
+        const fromAccountId = document.getElementById(
+          "transfer-from-account",
+        ).value;
+        const toAccountId = document.getElementById(
+          "transfer-to-account",
+        ).value;
+        const amount = parseFloat(
+          document.getElementById("transfer-amount").value,
+        );
+        const title = document.getElementById("transfer-title").value;
+        const description = document.getElementById(
+          "transfer-description",
+        ).value;
+        const date = document.getElementById("transfer-date").value;
+        const transferStatus = document.getElementById("transfer-status");
+
+        if (isNaN(amount) || amount === 0) {
+          transferStatus.textContent = "Enter a transfer amount.";
+          return;
+        }
+
+        if (fromAccountId === toAccountId) {
+          transferStatus.textContent = "Choose two different accounts.";
+          return;
+        }
+
+        let error;
+
+        if (editingTransferId) {
+          const fromUpdate = await supabaseClient
+            .from("transactions")
+            .update({
+              account_id: fromAccountId,
+              amount: -amount,
+              title: title,
+              description: description,
+              occurred_on: date,
+            })
+            .eq("transfer_id", editingTransferId)
+            .lt("amount", 0);
+
+          const toUpdate = await supabaseClient
+            .from("transactions")
+            .update({
+              account_id: toAccountId,
+              amount: amount,
+              title: title,
+              description: description,
+              occurred_on: date,
+            })
+            .eq("transfer_id", editingTransferId)
+            .gt("amount", 0);
+
+          error = fromUpdate.error || toUpdate.error;
+        } else {
+          const transferId = crypto.randomUUID();
+
+          const inserts = [
+            {
+              account_id: fromAccountId,
+              amount: -amount,
+              title: title,
+              description: description,
+              occurred_on: date,
+              transfer_id: transferId,
+              funding_id: null,
+            },
+            {
+              account_id: toAccountId,
+              amount: amount,
+              title: title,
+              description: description,
+              occurred_on: date,
+              transfer_id: transferId,
+              funding_id: null,
+            },
+          ];
+
+          const result = await supabaseClient
+            .from("transactions")
+            .insert(inserts);
+          error = result.error;
+        }
+
+        if (error) {
+          transferStatus.textContent = error.message;
+          return;
+        }
+
+        transferStatus.textContent = editingTransferId
+          ? "Transfer updated!"
+          : "Transfer saved!";
+        closeTransferModal();
+        loadTransactions();
+        loadAccounts();
+      }
+
+      document
+        .getElementById("save-transfer-btn")
+        .addEventListener("click", saveTransfer);
+
+      async function deleteTransaction(transaction) {
+        let confirmMessage = "Delete this transaction?";
+        let deleteQuery = supabaseClient
+          .from("transactions")
+          .delete()
+          .eq("id", transaction.id);
+
+        if (transaction.transfer_id) {
+          confirmMessage =
+            "This will delete both sides of this transfer. Continue?";
+          deleteQuery = supabaseClient
+            .from("transactions")
+            .delete()
+            .eq("transfer_id", transaction.transfer_id);
+        } else if (transaction.funding_id) {
+          confirmMessage =
+            "This will delete the entire income event and all its fundings. Continue?";
+          deleteQuery = supabaseClient
+            .from("transactions")
+            .delete()
+            .eq("funding_id", transaction.funding_id);
+        }
+
+        if (!window.confirm(confirmMessage)) {
+          return;
+        }
+
+        const { error } = await deleteQuery;
+
+        if (error) {
+          alert(error.message);
+          return;
+        }
+
+        loadTransactions();
+        loadAccounts();
+      }
+
+      let editingTransactionId = null;
+
+      function editTransaction(t) {
+        editingTransactionId = t.id;
+
+        document.getElementById("tx-amount").value = t.amount;
+        document.getElementById("tx-title").value = t.title;
+        document.getElementById("tx-description").value = t.description;
+        document.getElementById("tx-date").value = t.occurred_on;
+        document.getElementById("tx-account").value = t.account_id;
+
+        document.getElementById("add-tx-btn").textContent =
+          "Update Transaction";
+      }
+
+      async function saveTransaction() {
+        const amount = parseFloat(document.getElementById("tx-amount").value);
+        const title = document.getElementById("tx-title").value;
+        const description = document.getElementById("tx-description").value;
+        const date = document.getElementById("tx-date").value;
+        const accountId = document.getElementById("tx-account").value;
+        const txStatus = document.getElementById("tx-status");
+
+        const txData = {
+          amount: amount,
+          title: title,
+          description: description,
+          occurred_on: date,
+          account_id: accountId,
+        };
+
+        let result;
+        if (editingTransactionId) {
+          result = await supabaseClient
+            .from("transactions")
+            .update(txData)
+            .eq("id", editingTransactionId);
+        } else {
+          result = await supabaseClient.from("transactions").insert(txData);
+        }
+
+        if (result.error) {
+          txStatus.textContent = result.error.message;
+          return;
+        }
+
+        txStatus.textContent = editingTransactionId
+          ? "Transaction updated!"
+          : "Transaction added!";
+        resetTransactionForm();
+        loadTransactions();
+        loadAccounts();
+      }
+
+      function resetTransactionForm() {
+        editingTransactionId = null;
+        document.getElementById("tx-amount").value = "";
+        document.getElementById("tx-title").value = "";
+        document.getElementById("tx-description").value = "";
+        document.getElementById("tx-date").valueAsDate = new Date();
+        document.getElementById("add-tx-btn").textContent = "Add Transaction";
+      }
+
+      let editingTransferId = null;
+
+      async function editTransfer(t) {
+        const { data, error } = await supabaseClient
+          .from("transactions")
+          .select("*")
+          .eq("transfer_id", t.transfer_id);
+
+        if (error || !data || data.length !== 2) {
+          alert("Could not load this transfer.");
+          return;
+        }
+
+        const fromRow = data.find((row) => row.amount < 0);
+        const toRow = data.find((row) => row.amount > 0);
+
+        openTransferModal();
+
+        document.getElementById("transfer-from-account").value =
+          fromRow.account_id;
+        document.getElementById("transfer-to-account").value = toRow.account_id;
+        document.getElementById("transfer-amount").value = Math.abs(
+          fromRow.amount,
+        );
+        document.getElementById("transfer-title").value = fromRow.title;
+        document.getElementById("transfer-description").value =
+          fromRow.description;
+        document.getElementById("transfer-date").value = fromRow.occurred_on;
+
+        editingTransferId = t.transfer_id;
+        document.getElementById("save-transfer-btn").textContent =
+          "Update Transfer";
+      }
+
+      let editingFundingId = null;
+
+      async function editFunding(t) {
+        const { data, error } = await supabaseClient
+          .from("transactions")
+          .select("*")
+          .eq("funding_id", t.funding_id);
+
+        if (error || !data || data.length === 0) {
+          alert("Could not load this funding event.");
+          return;
+        }
+
+        const incomeRow = data.find((row) => !row.transfer_id);
+        const transferRows = data.filter((row) => row.transfer_id);
+        const transferIds = [
+          ...new Set(transferRows.map((row) => row.transfer_id)),
+        ];
+
+        openFundingModal();
+
+        document.getElementById("funding-income-account").value =
+          incomeRow.account_id;
+        document.getElementById("funding-income-amount").value =
+          incomeRow.amount;
+        document.getElementById("funding-income-title").value = incomeRow.title;
+        document.getElementById("funding-income-description").value =
+          incomeRow.description;
+        document.getElementById("funding-income-date").value =
+          incomeRow.occurred_on;
+
+        document.getElementById("funding-rows").innerHTML = "";
+
+        transferIds.forEach((id) => {
+          const pair = transferRows.filter((row) => row.transfer_id === id);
+          const toRow = pair.find((row) => row.amount > 0);
+
+          createFundingRow();
+          const allRows = document.querySelectorAll(".funding-row");
+          const newRow = allRows[allRows.length - 1];
+
+          newRow.querySelector(".row-account").value = toRow.account_id;
+          newRow.querySelector(".row-amount").value = toRow.amount;
+          newRow.querySelector(".row-title").value = toRow.title;
+          newRow.querySelector(".row-description").value = toRow.description;
+        });
+
+        editingFundingId = t.funding_id;
+        document.getElementById("save-funding-btn").textContent =
+          "Update Funding";
+      }
+
+      async function saveFunding() {
+        const incomeAccountId = document.getElementById(
+          "funding-income-account",
+        ).value;
+        const incomeAmount = parseFloat(
+          document.getElementById("funding-income-amount").value,
+        );
+        const incomeTitle = document.getElementById(
+          "funding-income-title",
+        ).value;
+        const incomeDescription = document.getElementById(
+          "funding-income-description",
+        ).value;
+        const incomeDate = document.getElementById("funding-income-date").value;
+        const fundingStatus = document.getElementById("funding-status");
+
+        if (isNaN(incomeAmount)) {
+          fundingStatus.textContent = "Enter an income amount.";
+          return;
+        }
+
+        if (editingFundingId) {
+          const { error: deleteError } = await supabaseClient
+            .from("transactions")
+            .delete()
+            .eq("funding_id", editingFundingId);
+
+          if (deleteError) {
+            fundingStatus.textContent = deleteError.message;
+            return;
+          }
+        }
+
+        const fundingId = editingFundingId || crypto.randomUUID();
+        const rowsData = collectFundingRows();
+
+        const inserts = [
+          {
+            account_id: incomeAccountId,
+            amount: incomeAmount,
+            title: incomeTitle,
+            description: incomeDescription,
+            occurred_on: incomeDate,
+            funding_id: fundingId,
+            transfer_id: null,
+          },
+        ];
+
+        rowsData.forEach((rowData) => {
+          const transferId = crypto.randomUUID();
+
+          inserts.push({
+            account_id: incomeAccountId,
+            amount: -rowData.amount,
+            title: rowData.title,
+            description: rowData.description,
+            occurred_on: incomeDate,
+            funding_id: fundingId,
+            transfer_id: transferId,
+          });
+
+          inserts.push({
+            account_id: rowData.accountId,
+            amount: rowData.amount,
+            title: rowData.title,
+            description: rowData.description,
+            occurred_on: incomeDate,
+            funding_id: fundingId,
+            transfer_id: transferId,
+          });
+        });
+
+        const { error } = await supabaseClient
+          .from("transactions")
+          .insert(inserts);
+
+        if (error) {
+          fundingStatus.textContent = error.message;
+          return;
+        }
+
+        fundingStatus.textContent = editingFundingId
+          ? "Funding updated!"
+          : "Funding saved!";
+        closeFundingModal();
+        loadTransactions();
+        loadAccounts();
+      }
+
+      const deleteAccountModal = document.getElementById(
+        "delete-account-modal",
+      );
+
+      function openDeleteAccountModal() {
+        deleteAccountModal.classList.remove("hidden");
+
+        const select = document.getElementById("delete-account-select");
+        select.innerHTML = "";
+        copyAccountOptions(select);
+      }
+
+      function closeDeleteAccountModal() {
+        deleteAccountModal.classList.add("hidden");
+        document.getElementById("delete-account-status").textContent = "";
+      }
+
+      document
+        .getElementById("open-delete-account-modal-btn")
+        .addEventListener("click", openDeleteAccountModal);
+
+      document
+        .getElementById("cancel-delete-account-btn")
+        .addEventListener("click", closeDeleteAccountModal);
+
+      document
+        .getElementById("confirm-delete-account-btn")
+        .addEventListener("click", async () => {
+          const accountId = document.getElementById(
+            "delete-account-select",
+          ).value;
+          const status = document.getElementById("delete-account-status");
+
+          const confirmed = window.confirm(
+            "This deletes the account and every transaction connected to it — including transfers and fundings that also touch other accounts. This cannot be undone. Continue?",
+          );
+          if (!confirmed) return;
+
+          try {
+            await deleteAccountCascade(accountId);
+            status.textContent = "Account deleted.";
+            closeDeleteAccountModal();
+            loadAccounts();
+            loadTransactions();
+          } catch (err) {
+            status.textContent = err.message;
+          }
+        });
 
       checkSession();
     </script>

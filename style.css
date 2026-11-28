@@ -19,3 +19,8 @@
   width: 85%;
   max-width: 320px;
 }
+
+.funding-rows-scroll {
+  max-height: 300px;
+  overflow-y: auto;
+}
